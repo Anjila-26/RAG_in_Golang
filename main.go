@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/tmc/langchaingo/llms"
     "github.com/tmc/langchaingo/llms/ollama"
@@ -21,8 +22,6 @@ var logo = `
  Local LLM CLI powered by Ollama
 `
 
-
-
 func main() {
 	fmt.Println(logo)
 
@@ -33,6 +32,7 @@ func main() {
 
 	query := "What is the capital city of France?"
 
+	start := time.Now()
 	ctx := context.Background()
 
 	completion, err := llms.GenerateFromSinglePrompt(ctx, llm, query)
@@ -40,6 +40,10 @@ func main() {
 		log.Fatal(err)
 	}
 
-	fmt.Printf("Response : \n")
+	fmt.Printf("Response : \n\n")
+
+	elapsed := time.Since(start)
+
 	fmt.Print(completion)
+	fmt.Printf("\n\nExectution time: %s\n\n", elapsed)
 }
