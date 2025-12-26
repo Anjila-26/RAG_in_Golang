@@ -9,8 +9,6 @@ RAG enhances LLM responses by:
 2. **Retrieval** - Finding relevant documents using semantic search
 3. **Augmentation** - Providing context to the LLM before generating a response
 
-## ✅ **NOW FULLY WORKING!**
-
 ## Setup
 
 ### Prerequisites
