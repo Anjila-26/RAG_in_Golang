@@ -11,9 +11,10 @@ import (
 
 	"github.com/tmc/langchaingo/llms"
 	"github.com/tmc/langchaingo/llms/ollama"
+
 )
 
-var logo = `
+const logo = `
  ██████╗ ██╗     ██╗      █████╗ ███╗   ███╗ █████╗
 ██╔═══██╗██║     ██║     ██╔══██╗████╗ ████║██╔══██╗
 ██║   ██║██║     ██║     ███████║██╔████╔██║███████║
@@ -31,6 +32,10 @@ func cleanInput(str string) string {
 func main() {
 	fmt.Println(logo)
 
+	// Uncomment to run web crawler
+	// crawling()
+	// return
+
 	scanner := bufio.NewScanner(os.Stdin)
 
 	// Initialize Ollama LLM
@@ -38,6 +43,10 @@ func main() {
 	if err != nil {
 		log.Fatal("Error initializing Ollama LLM:", err)
 	}
+
+	fmt.Println("Starting web crawler...")
+	crawling()
+	fmt.Println("\nCrawling completed!")
 
 	for {
 		fmt.Printf("Prompt : ")
@@ -93,4 +102,6 @@ func main() {
 
 		fmt.Printf("\nExecution time: %s\n\n", elapsed)
 	}
+
+
 }
