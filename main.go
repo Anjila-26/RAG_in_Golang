@@ -63,12 +63,24 @@ func main() {
 		ctx := context.Background()
 
 		// Generate completion
-		completion, err := llms.GenerateFromSinglePrompt(
+		_, err := llms.GenerateFromSinglePrompt(
 			ctx,
 			llm,
 			text,
 			llms.WithStreamingFunc(func(ctx context.Context, chunk []byte) error {
-				fmt.Printf("%s", chunk)
+				// Buffer for clean word streaming
+				var buffer strings.Builder
+				for _, b := range chunk {
+					buffer.WriteByte(b)
+					if b == ' ' || b == '\n' || b == '.' || b == ',' {
+						fmt.Print(buffer.String())
+						buffer.Reset()
+					}
+				}
+				// Print remaining buffer if any
+				if buffer.Len() > 0 {
+					fmt.Print(buffer.String())
+				}
 				return nil
 			}),
 		)
@@ -79,7 +91,6 @@ func main() {
 
 		elapsed := time.Since(start)
 
-		fmt.Printf("\nResponse :\n\n%s\n", completion)
 		fmt.Printf("\nExecution time: %s\n\n", elapsed)
 	}
 }
