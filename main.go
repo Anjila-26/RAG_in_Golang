@@ -4,10 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"os"
-	"time"
 
-	ollama "github.com/prathyushnallamothu/ollamago"
+	"github.com/tmc/langchaingo/llms"
+    "github.com/tmc/langchaingo/llms/ollama"
 )
 
 var logo = `
@@ -22,31 +21,25 @@ var logo = `
  Local LLM CLI powered by Ollama
 `
 
+
+
 func main() {
 	fmt.Println(logo)
 
-	if len(os.Args) < 2 {
-		fmt.Println("Usage: ollama-go \"your prompt here\"")
-		os.Exit(1)
-	}
-
-	prompt := os.Args[1]
-
-	client := ollama.NewClient(
-		ollama.WithTimeout(5*time.Minute),
-	)
-
-	resp, err := client.Generate(
-		context.Background(),
-		ollama.GenerateRequest{
-			Model:  "llama3:latest",
-			Prompt: prompt,
-		},
-	)
+	llm, err := ollama.New(ollama.WithModel("llama3:latest"))
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	fmt.Println("\n🤖 Response:\n")
-	fmt.Println(resp.Response)
+	query := "What is the capital city of France?"
+
+	ctx := context.Background()
+
+	completion, err := llms.GenerateFromSinglePrompt(ctx, llm, query)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Printf("Response : \n")
+	fmt.Print(completion)
 }
