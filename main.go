@@ -9,9 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tmc/langchaingo/llms"
-	"github.com/tmc/langchaingo/llms/ollama"
-
+	"ollama_go/internal"
+	"ollama_go/internal/store"
 )
 
 const logo = `
@@ -32,21 +31,37 @@ func cleanInput(str string) string {
 func main() {
 	fmt.Println(logo)
 
-	// Uncomment to run web crawler
-	// crawling()
-	// return
-
-	scanner := bufio.NewScanner(os.Stdin)
-
-	// Initialize Ollama LLM
-	llm, err := ollama.New(ollama.WithModel("llama3:latest"))
-	if err != nil {
-		log.Fatal("Error initializing Ollama LLM:", err)
+	// Check if we should crawl
+	if len(os.Args) > 1 && os.Args[1] == "crawl" {
+		fmt.Println("Starting web crawler...")
+		crawling()
+		fmt.Println("\nCrawling completed!")
+		return
 	}
 
-	fmt.Println("Starting web crawler...")
-	crawling()
-	fmt.Println("\nCrawling completed!")
+	// Initialize document store and load existing documents
+	docStore := store.NewDocumentStore()
+	if err := docStore.LoadFromDisk(); err != nil {
+		log.Printf("Warning: Could not load documents: %v", err)
+	}
+
+	docs := docStore.GetAllDocuments()
+	if len(docs) == 0 {
+		fmt.Println("⚠️  No documents found! Please run 'go run . crawl' first to index documents.")
+		return
+	}
+
+	fmt.Printf("✅ Loaded %d documents from index\n\n", len(docs))
+
+	// Initialize RAG service
+	ragService, err := internal.NewRAGService("llama3:latest", docStore, 3)
+	if err != nil {
+		log.Fatal("Error initializing RAG service:", err)
+	}
+
+	scanner := bufio.NewScanner(os.Stdin)
+	fmt.Println("🤖 RAG-powered Q&A ready! Ask questions about the indexed Go documentation.")
+	fmt.Println("Type 'exit' to quit.\n")
 
 	for {
 		fmt.Printf("Prompt : ")
@@ -71,30 +86,14 @@ func main() {
 		start := time.Now()
 		ctx := context.Background()
 
-		// Generate completion
-		_, err := llms.GenerateFromSinglePrompt(
-			ctx,
-			llm,
-			text,
-			llms.WithStreamingFunc(func(ctx context.Context, chunk []byte) error {
-				// Buffer for clean word streaming
-				var buffer strings.Builder
-				for _, b := range chunk {
-					buffer.WriteByte(b)
-					if b == ' ' || b == '\n' || b == '.' || b == ',' {
-						fmt.Print(buffer.String())
-						buffer.Reset()
-					}
-				}
-				// Print remaining buffer if any
-				if buffer.Len() > 0 {
-					fmt.Print(buffer.String())
-				}
-				return nil
-			}),
-		)
+		fmt.Println("\n🔍 Searching for relevant context...")
+
+		// Use RAG to generate response with retrieved context
+		_, err := ragService.Query(ctx, text, func(chunk string) {
+			fmt.Print(chunk)
+		})
 		if err != nil {
-			log.Println("Error generating response:", err)
+			log.Println("\n❌ Error generating response:", err)
 			continue
 		}
 
@@ -102,6 +101,5 @@ func main() {
 
 		fmt.Printf("\nExecution time: %s\n\n", elapsed)
 	}
-
 
 }

@@ -16,6 +16,7 @@ import (
 	"github.com/gocolly/colly"
 	"github.com/google/uuid"
 )
+
 func crawling() {
 	// Initialize embedding service
 	embService, err := embedding.NewService("llama3:latest")
@@ -27,7 +28,7 @@ func crawling() {
 	docStore := store.NewDocumentStore()
 
 	ctx := context.Background()
-	
+
 	// Thread-safe storage for documents
 	var documentsMux sync.Mutex
 	documents := make([]*models.PageContent, 0)
@@ -35,21 +36,22 @@ func crawling() {
 	// Thread-safe page counter
 	var pageCountMux sync.Mutex
 	pageCount := 0
-	maxPages := 10 // Limit to 10 pages
+	maxPages := 5 // Reduced to 5 pages to avoid rate limits
 
 	// Create collector with async enabled for concurrent crawling
 	c := colly.NewCollector(
-		colly.AllowedDomains("pkg.go.dev"),
-		colly.MaxDepth(1),
-		colly.Async(true), // Enable asynchronous mode for parallel crawling
+		colly.AllowedDomains("go.dev"),
+		colly.MaxDepth(2),
+		colly.Async(true),
+		colly.UserAgent("Mozilla/5.0 (compatible; GoRAGBot/1.0)"),
 	)
-	maxPages = 10 // Limit to 10 pages
 
 	// Limit parallelism - control how many requests run simultaneously
 	c.Limit(&colly.LimitRule{
-		DomainGlob:  "pkg.go.dev",
-		Parallelism: 3,                    // 3 concurrent requests
-		RandomDelay: 500 * time.Millisecond, // Delay between requests
+		DomainGlob:  "go.dev",
+		Parallelism: 1,               // 1 request at a time to avoid rate limits
+		Delay:       2 * time.Second, // 2 second delay between requests
+		RandomDelay: 1 * time.Second, // Additional random delay
 	})
 
 	// Extract and display page content
@@ -128,12 +130,14 @@ func crawling() {
 		documentsMux.Lock()
 		documents = append(documents, pageContent)
 		documentsMux.Unlock()
+	})
+
 	c.OnHTML("a[href]", func(e *colly.HTMLElement) {
 		// Check page count in thread-safe manner
 		pageCountMux.Lock()
 		shouldSkip := pageCount >= maxPages
 		pageCountMux.Unlock()
-		
+
 		if shouldSkip {
 			return
 		}
@@ -141,7 +145,11 @@ func crawling() {
 		link := e.Attr("href")
 		absURL := e.Request.AbsoluteURL(link)
 
-		// Skip version tabs and external links
+		// Only follow links within go.dev/doc
+		if !strings.Contains(absURL, "go.dev/doc") {
+			return
+		}
+
 		c.Visit(absURL)
 	})
 
@@ -153,40 +161,42 @@ func crawling() {
 		fmt.Printf("❌ Error: %v\n", err)
 	})
 
-	// Start crawling
-	c.Visit("https://pkg.go.dev/std")
-	
+	// Start crawling from Go documentation
+	c.Visit("https://go.dev/doc/tutorial/getting-started")
+	c.Visit("https://go.dev/doc/effective_go")
+	c.Visit("https://go.dev/doc/code")
+	c.Visit("https://go.dev/doc/install")
+
 	// Wait for all async requests to complete
 	c.Wait()
-	})
 
-	c.OnError(func(r *colly.Response, err error) {
-		fmt.Printf("❌ Error: %v\n", err)
-	})
+	fmt.Println("\n" + strings.Repeat("=", 80))
+	fmt.Printf("✅ Crawling completed! Total pages: %d\n", pageCount)
+	fmt.Println(strings.Repeat("=", 80))
 
 	// Generate embeddings for all collected documents (parallelized)
 	if len(documents) > 0 {
 		fmt.Println("\n🔄 Generating embeddings for crawled content...")
-		
+
 		// Use worker pool for parallel embedding generation
 		numWorkers := 3 // Number of parallel embedding workers
 		docChan := make(chan struct {
 			index   int
 			content *models.PageContent
 		}, len(documents))
-		
+
 		var wg sync.WaitGroup
-		
+
 		// Start workers
 		for w := 0; w < numWorkers; w++ {
 			wg.Add(1)
 			go func(workerID int) {
 				defer wg.Done()
-				
+
 				for job := range docChan {
 					i := job.index
 					pageContent := job.content
-					
+
 					// Combine title, description, and content for embedding
 					combinedText := fmt.Sprintf("%s. %s. %s",
 						pageContent.Title,
@@ -198,7 +208,7 @@ func crawling() {
 						combinedText = combinedText[:2000]
 					}
 
-					fmt.Printf("\n📊 [Worker %d] Generating embedding for page %d/%d: %s\n", 
+					fmt.Printf("\n📊 [Worker %d] Generating embedding for page %d/%d: %s\n",
 						workerID, i+1, len(documents), pageContent.Title)
 
 					// Generate embedding
@@ -225,12 +235,12 @@ func crawling() {
 						continue
 					}
 
-					fmt.Printf("✅ [Worker %d] Embedding generated (dim: %d) and document saved\n", 
+					fmt.Printf("✅ [Worker %d] Embedding generated (dim: %d) and document saved\n",
 						workerID, len(embedding))
 				}
 			}(w)
 		}
-		
+
 		// Send jobs to workers
 		for i, pageContent := range documents {
 			docChan <- struct {
@@ -239,12 +249,14 @@ func crawling() {
 			}{i, pageContent}
 		}
 		close(docChan)
-		
+
 		// Wait for all workers to complete
 		wg.Wait()
 
 		fmt.Println("\n" + strings.Repeat("=", 80))
 		fmt.Printf("✅ Generated and saved %d embeddings\n", len(documents))
 		fmt.Println(strings.Repeat("=", 80))
+	} else {
+		fmt.Println("\n⚠️  No documents were crawled!")
 	}
 }
